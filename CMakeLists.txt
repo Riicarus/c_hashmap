@@ -16,10 +16,11 @@ set_target_properties(c_hashmap_static PROPERTIES OUTPUT_NAME c_hashmap)
 set_target_properties(c_hashmap PROPERTIES CLEAN_DIRECT_OUTPUT 1)
 set_target_properties(c_hashmap_static PROPERTIES CLEAN_DIRECT_OUTPUT 1)
 
-# build test for c_hashmap
-# link lib to all file
-link_libraries(c_hashmap)
-set(TEST_SRC ${PROJECT_SOURCE_DIR}/test/map_test.c)
-add_executable(map_test ${TEST_SRC})
-# link lib to target
-# target_link_libraries(map_test PUBLIC c_hashmap)
+option(NEED_TEST OFF)
+if(NEED_TEST)
+    # build test for c_hashmap
+    set(TEST_SRC ${PROJECT_SOURCE_DIR}/test/map_test.c)
+    add_executable(map_test ${TEST_SRC})
+    # link lib for map_test
+    target_link_libraries(map_test c_hashmap)
+endif(NEED_TEST)

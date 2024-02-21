@@ -3,5 +3,9 @@
 *.cmake
 CMakeCache.txt
 install_manifest.txt
+
 .vscode/*
 .idea/*
+
+test/*
+build_test.sh
