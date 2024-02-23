@@ -1,51 +1,84 @@
 #include "c_hashmap.h"
 #include "limits.h"
 #include <stdio.h>
-#include <string.h>
 #include <errno.h>
 
-hashmap hashmap_init_f(
-    int init_cap, float expand_factor, float shrink_factor, hash_func hash_f, eq_func k_eq_f, eq_func v_eq_f) {
+hashmap hashmap_new_f(int             init_cap,
+                      float           expand_factor,
+                      float           shrink_factor,
+                      attr_get_func   k_get_f,
+                      attr_get_func   v_get_f,
+                      val_update_func v_update_f,
+                      hash_func       hash_f,
+                      eq_func         k_eq_f,
+                      eq_func         v_eq_f,
+                      free_func       free_f) {
     hashmap map = (hashmap)calloc(1, sizeof(struct _hashmap));
-    if (map == NULL) goto error;
+    if (map == NULL) goto mem_error;
 
     map->size = 0;
     if (init_cap <= 0) init_cap = DEFAULT_INIT_CAP;
-
     // avoid overflow
     if (init_cap >= INT_MAX >> 1) map->cap = INT_MAX;
     else map->cap = round_up_power_of_2(init_cap);
 
-    map->expand_factor = expand_factor < 0 ? DEFAULT_EXPAND_FACTOR : expand_factor;
-    map->shrink_factor = shrink_factor < 0 ? DEFAULT_SHRINK_FACTOR : shrink_factor;
+    map->expand_factor = expand_factor < 0.5 || expand_factor >= 1 ? DEFAULT_EXPAND_FACTOR : expand_factor;
+    map->shrink_factor = shrink_factor < 0.1 || shrink_factor >= 0.5 ? DEFAULT_SHRINK_FACTOR : shrink_factor;
+
+    if (k_get_f == NULL || v_get_f == NULL || v_update_f == NULL) goto arg_error;
+    map->k_get_f = k_get_f;
+    map->v_get_f = v_get_f;
+    map->v_update_f = v_update_f;
 
     map->bucket = (hash_map_entry *)calloc(map->cap, sizeof(hash_map_entry));
-    if (map->bucket == NULL) goto error;
+    if (map->bucket == NULL) goto mem_error;
 
     map->hash_f = hash_f == NULL ? &ptr_hash_func : hash_f;
     map->k_eq_f = k_eq_f == NULL ? &ptr_eq_func : k_eq_f;
     map->v_eq_f = v_eq_f == NULL ? &ptr_eq_func : v_eq_f;
+
+    map->free_f = free_f;
     return map;
 
-error:
+mem_error:
     perror("no enough memory");
+    return NULL;
+
+arg_error:
+    perror("argument k/v_get_f could not be null");
     return NULL;
 }
 
-hashmap hashmap_init(int init_cap, hash_func hash_f, eq_func k_eq_f, eq_func v_eq_f) {
-    return hashmap_init_f(init_cap, DEFAULT_EXPAND_FACTOR, DEFAULT_SHRINK_FACTOR, hash_f, k_eq_f, v_eq_f);
+hashmap hashmap_new(int             init_cap,
+                    attr_get_func   k_get_f,
+                    attr_get_func   v_get_f,
+                    val_update_func v_update_f,
+                    hash_func       hash_f,
+                    eq_func         k_eq_f,
+                    eq_func         v_eq_f) {
+    return hashmap_new_f(init_cap,
+                         DEFAULT_EXPAND_FACTOR,
+                         DEFAULT_SHRINK_FACTOR,
+                         k_get_f,
+                         v_get_f,
+                         v_update_f,
+                         hash_f,
+                         k_eq_f,
+                         v_eq_f,
+                         NULL);
 }
 
-hashmap hashmap_init_default(hash_func hash_f, eq_func k_eq_f, eq_func v_eq_f) {
-    return hashmap_init(DEFAULT_INIT_CAP, hash_f, k_eq_f, v_eq_f);
+hashmap hashmap_new_default(attr_get_func   k_get_f,
+                            attr_get_func   v_get_f,
+                            val_update_func v_update_f,
+                            hash_func       hash_f,
+                            eq_func         k_eq_f,
+                            eq_func         v_eq_f) {
+    return hashmap_new(DEFAULT_INIT_CAP, k_get_f, v_get_f, v_update_f, hash_f, k_eq_f, v_eq_f);
 }
 
-void hashmap_set_k_free_func(const hashmap map, free_func k_free_f) {
-    map->k_free_f = k_free_f;
-}
-
-void hashmap_set_v_free_func(const hashmap map, free_func v_free_f) {
-    map->v_free_f = v_free_f;
+void hashmap_set_free_func(const hashmap map, free_func free_f) {
+    map->free_f = free_f;
 }
 
 int _hashmap_cul_index(uint cap, int h) {
@@ -135,87 +168,85 @@ error:
     return false;
 }
 
-hash_map_entry _hashmap_get_entry(const hashmap map, const void *k) {
-    int h = hash(map->hash_f, k);
+hash_map_entry _hashmap_get_entry(const hashmap map, void *ele) {
+    int h = hash(map->hash_f, map->k_get_f(ele));
     int idx = _hashmap_cul_index(map->cap, h);
 
     hash_map_entry e = map->bucket[idx];
     while (e != NULL) {
-        if (map->k_eq_f(e->key, k)) return e;
+        if (map->k_eq_f(map->k_get_f(e->ele), map->k_get_f(ele))) return e;
         e = e->next;
     }
     return NULL;
 }
 
-bool hashmap_contains_key(const hashmap map, const void *k) {
-    return _hashmap_get_entry(map, k) != NULL;
+bool hashmap_contains_key(const hashmap map, void *ele) {
+    return _hashmap_get_entry(map, ele) != NULL;
 }
 
-bool hashmap_contains_value(const hashmap map, void *v) {
+bool hashmap_contains_value(const hashmap map, void *ele) {
     hash_map_entry *b = map->bucket;
     hash_map_entry  e;
     for (int i = 0; i < map->cap; i++, b++) {
         if ((e = *b) == NULL) continue;
         while (e != NULL) {
-            if (map->v_eq_f(e->val, v)) return true;
+            if (map->v_eq_f(map->v_get_f(e->ele), map->v_get_f(ele))) return true;
             e = e->next;
         }
     }
     return false;
 }
 
-void *hashmap_get(const hashmap map, const void *k) {
-    int h = hash(map->hash_f, k);
+void *hashmap_get(const hashmap map, void *ele) {
+    int h = hash(map->hash_f, map->k_get_f(ele));
     int idx = _hashmap_cul_index(map->cap, h);
 
     hash_map_entry e = map->bucket[idx];
     while (e != NULL) {
-        if (map->k_eq_f(e->key, k)) return e->val;
+        if (map->k_eq_f(map->k_get_f(e->ele), map->k_get_f(ele))) return map->v_get_f(e->ele);
         e = e->next;
     }
     return NULL;
 }
 
-void *hashmap_get_or_default(const hashmap map, const void *k, void *def_val) {
-    void *v = hashmap_get(map, k);
-    if (v == NULL) return def_val;
+void *hashmap_get_or_default(const hashmap map, void *ele, void *def_ele) {
+    void *v = hashmap_get(map, ele);
+    if (v == NULL) return map->v_get_f(def_ele);
     return v;
 }
 
-void *hashmap_get_or_default_f(const hashmap map, const void *k, val_produce_func val_produce_f) {
-    void *v = hashmap_get(map, k);
-    if (v == NULL) return val_produce_f(k);
+void *hashmap_get_or_default_f(const hashmap map, void *ele, produce_func produce_f) {
+    void *v = hashmap_get(map, ele);
+    if (v == NULL) return map->v_get_f(produce_f(ele));
     return v;
 }
 
-void *hashmap_put_f(const hashmap map, const void *k, void *v, free_func k_free_f, free_func v_free_func) {
+void *hashmap_put_f(const hashmap map, void *ele, free_func free_f) {
     hash_map_entry e = (hash_map_entry)malloc(sizeof(struct _hash_map_entry));
     if (e == NULL) {
         perror("no enough memory");
-        return v;
+        return map->v_get_f(ele);
     }
-    e->hash = hash(map->hash_f, k);
-    e->key = k;
-    e->val = v;
+    e->hash = hash(map->hash_f, map->k_get_f(ele));
+    e->ele = ele;
     e->next = NULL;
-    e->k_free_f = k_free_f;
-    e->v_free_f = v_free_func;
+    e->free_f = free_f;
 
-    if (!_hashmap_ensure_cap(map, 1)) return v;
+    if (!_hashmap_ensure_cap(map, 1)) return ele;
 
     int idx = _hashmap_cul_index(map->cap, e->hash);
     if (map->bucket[idx] == NULL) {
         map->bucket[idx] = e;
         map->size += 1;
-        return v;
+        return map->v_get_f(e->ele);
     }
 
     // find if key exists
     hash_map_entry h = map->bucket[idx];
     while (h != NULL) {
-        if (map->k_eq_f(h->key, k)) {
-            h->val = v;
-            return v;
+        if (map->k_eq_f(map->k_get_f(h->ele), map->k_get_f(ele))) {
+            map->v_update_f(h->ele, ele);
+            return map->v_get_f(h->ele);
         }
         h = h->next;
     }
@@ -224,34 +255,33 @@ void *hashmap_put_f(const hashmap map, const void *k, void *v, free_func k_free_
     map->bucket[idx] = e;
     map->size += 1;
 
-    return v;
+    return map->v_get_f(e->ele);
 }
 
-void *hashmap_put(const hashmap map, const void *k, void *v) {
-    return hashmap_put_f(map, k, v, NULL, NULL);
+void *hashmap_put(const hashmap map, void *ele) {
+    return hashmap_put_f(map, ele, NULL);
 }
 
-void *hashmap_put_if_absent(const hashmap map, const void *k, void *def_val) {
-    hash_map_entry e = _hashmap_get_entry(map, k);
-    if (e != NULL) return e->val;
-    return hashmap_put(map, k, def_val);
+void *hashmap_put_if_absent(const hashmap map, void *ele, void *def_ele) {
+    hash_map_entry e = _hashmap_get_entry(map, ele);
+    if (e != NULL) return e->ele;
+    return hashmap_put(map, def_ele);
 }
 
-void *hashmap_put_if_absent_f(const hashmap map, const void *k, val_produce_func val_produce_f) {
-    hash_map_entry e = _hashmap_get_entry(map, k);
-    if (e != NULL) return e->val;
-    return hashmap_put(map, k, val_produce_f(k));
+void *hashmap_put_if_absent_f(const hashmap map, void *ele, produce_func produce_f) {
+    hash_map_entry e = _hashmap_get_entry(map, ele);
+    if (e != NULL) return e->ele;
+    return hashmap_put(map, produce_f(ele));
 }
 
-bool hashmap_set_entry_free_func(const hashmap map, const void *k, free_func k_free_f, free_func v_free_f) {
-    int h = hash(map->hash_f, k);
+bool hashmap_ele_set_free_func(const hashmap map, void *ele, free_func free_f) {
+    int h = hash(map->hash_f, ele);
     int idx = _hashmap_cul_index(map->cap, h);
 
     hash_map_entry e = map->bucket[idx];
     while (e != NULL) {
-        if (map->k_eq_f(e->key, k)) {
-            e->k_free_f = k_free_f;
-            e->v_free_f = v_free_f;
+        if (map->k_eq_f(map->k_get_f(e->ele), map->k_get_f(ele))) {
+            e->free_f = free_f;
             return true;
         }
         e = e->next;
@@ -260,31 +290,29 @@ bool hashmap_set_entry_free_func(const hashmap map, const void *k, free_func k_f
 }
 
 void _free_entry(const hashmap map, hash_map_entry e) {
-    free_func k_free_f = e->k_free_f == NULL ? map->k_free_f : e->k_free_f;
-    free_func v_free_f = e->v_free_f == NULL ? map->v_free_f : e->v_free_f;
-    if (k_free_f != NULL) k_free_f(e->key);
-    if (v_free_f != NULL) v_free_f(e->val);
+    free_func free_f = e->free_f == NULL ? map->free_f : e->free_f;
+    if (free_f != NULL) free_f(e->ele);
     free(e);
     e = NULL;
 }
 
-void *hashmap_remove(const hashmap map, const void *k) {
-    int h = hash(map->hash_f, k);
+void *hashmap_remove(const hashmap map, void *ele) {
+    int h = hash(map->hash_f, map->k_get_f(ele));
     int idx = _hashmap_cul_index(map->cap, h);
 
     hash_map_entry e = map->bucket[idx];
     hash_map_entry pe = NULL;
     while (e != NULL) {
-        if (map->k_eq_f(e->key, k)) {
+        if (map->k_eq_f(map->k_get_f(e->ele), map->k_get_f(ele))) {
             if (pe == NULL) map->bucket[idx] = e->next;
             else pe->next = e->next;
 
-            void *val = e->val;
+            void *v = map->v_get_f(ele);
             _free_entry(map, e);
             map->size -= 1;
 
             _hashmap_ensure_cap(map, 0);
-            return val;
+            return v;
         }
         pe = e;
         e = e->next;
@@ -302,7 +330,7 @@ uint hashmap_remove_if(const hashmap map, filter_func filter_f) {
         if ((e = *b) == NULL) continue;
 
         while (e != NULL) {
-            if (filter_f(e->key, e->val)) {
+            if (filter_f(e->ele)) {
                 if (pe == NULL) map->bucket[i] = e->next;
                 else pe->next = e->next;
 
@@ -350,7 +378,7 @@ void hashmap_free(hashmap map) {
     map = NULL;
 }
 
-hashmap_itr hashmap_itr_init(foreach_func foreach_f) {
+hashmap_itr hashmap_itr_new(foreach_func foreach_f) {
     hashmap_itr itr = (hashmap_itr)calloc(1, sizeof(struct _hashmap_iterator));
     if (itr == NULL) goto error;
 
@@ -382,8 +410,8 @@ void hashmap_foreach(const hashmap map, const hashmap_itr itr) {
         if ((e = *b) == NULL) continue;
 
         while (e != NULL) {
-            if (itr->filter_f == NULL || itr->filter_f(e->key, e->val)) {
-                if (itr->foreach_f(e->key, e->val)) return;
+            if (itr->filter_f == NULL || itr->filter_f(e->ele)) {
+                if (itr->foreach_f(e->ele)) return;
                 e = e->next;
             } else e = e->next;
         }
