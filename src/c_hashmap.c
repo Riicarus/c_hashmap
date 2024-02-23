@@ -114,15 +114,6 @@ void _hashmap_rehash(const hashmap map, hash_map_entry *new_bucket, bool is_expa
         if ((e = *b) == NULL) continue;
 
         while (e != NULL) {
-            /*
-             * hash = 110110, idx = 6(0110), cap = 16(10000), new_cap = 32(100000)
-             * hash & cap(highest bit of (new_cap - 1)) = 110110 & 10000 = 010000
-             * new_idx = 22 (110110 & 11111) = 6 + 16
-             * otherwise:
-             * hash = 100110, idx = 6(0110), cap = 16(10000), new_cap = 32(100000)
-             * hash & cap(highest bit of (new_cap - 1)) = 100110 & 10000 = 000000
-             * new_idx = 6 (100110 & 11111) = 6 (the same index)
-             */
             if (is_expand) new_idx = e->hash & map->cap ? i + map->cap : i;
             else new_idx = e->hash & new_cap ? i - new_cap : i;
 
