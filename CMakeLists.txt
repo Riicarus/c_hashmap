@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.20.0)
 project(c_hashmap_lib VERSION 1.0 LANGUAGES C)
 
+set(CMAKE_BUILD_TYPE "Release")
 if(NEED_TEST)
     set(CMAKE_BUILD_TYPE "Debug")
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
+    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O3")
 endif(NEED_TEST)
-
 
 # include .c files
 file(GLOB SRC ${PROJECT_SOURCE_DIR}/src/*.c)

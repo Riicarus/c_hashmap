@@ -151,7 +151,7 @@ void test_get(hashmap map) {
     printf("--------------------------------\n");
 }
 
-void test_get_or_defualt(hashmap map) {
+void test_get_or_default(hashmap map) {
     printf("\n");
     printf("--------get_or_default test--------\n");
     student *s = &(student){"xiaoming", 11111};
@@ -219,10 +219,11 @@ void test_free(hashmap map) {
     printf("--------------------------------\n");
 }
 
+// avg_time(unit: ns/op)--o0(o3): 1e3: 53(40), 1e4: 76(54), 1e5: 107(72), 1e6: 113(74), 1e7: 128(79)
 void benchmark_put_expand() {
     printf("\n");
     printf("--------benchmark expand put--------\n");
-    int     cnt = 100000;
+    int     cnt = 10000000;
     hashmap map = hashmap_new_default(&get_name, &get_age, &stu_update, &str_hash_func, &str_eq_func, &str_eq_func);
     hashmap_set_free_func(map, &stu_free);
     student **stus = calloc(cnt, sizeof(student *));
@@ -248,7 +249,7 @@ void benchmark_put_expand() {
     printf("--------------------------------\n");
 }
 
-// avg_time(ns/op): 1e3: 30, 1e4: 41, 1e5: 70, 1e6: 170, 1e7: 280
+// avg_time(unit: ns/op)--o0(o3): 1e3: 55(40), 1e4: 65(45), 1e5: 78(50), 1e6: 88(55), 1e7: 98(58)
 void benchmark_put_no_expand() {
     printf("\n");
     printf("--------benchmark no expand put--------\n");
@@ -262,7 +263,6 @@ void benchmark_put_no_expand() {
         sprintf(c, "%d", i);
         *stu_itr = student_new(c, i);
     }
-
     struct timeval tv;
     gettimeofday(&tv, NULL);
     long long st = tv.tv_sec * 1e6 + tv.tv_usec;
@@ -270,7 +270,6 @@ void benchmark_put_no_expand() {
     for (int i = 0; i < cnt; i++, stu_itr++) {
         hashmap_put(map, *stu_itr);
     }
-
     gettimeofday(&tv, NULL);
     long long et = tv.tv_sec * 1000000 + tv.tv_usec;
     printf("total_op: %d, total_time: %lld us, avg: %f ns\n", cnt, et - st, ((et - st) * 1000.0 / cnt));
@@ -279,11 +278,11 @@ void benchmark_put_no_expand() {
     printf("--------------------------------\n");
 }
 
-// avg_time(ns/op): 1e3: 17, 1e4: 18, 1e5: 25, 1e6: 28, 1e7: 32
+// avg_time(unit: ns/op)--o0(o3): 1e3: 17(7), 1e4: 18(7), 1e5: 25(10), 1e6: 28(11), 1e7: 32(12)
 void benchmark_get() {
     printf("\n");
     printf("--------benchmark get--------\n");
-    int     cnt = 100000;
+    int     cnt = 1000;
     hashmap map = hashmap_new(cnt, &get_name, &get_age, &stu_update, &str_hash_func, &str_eq_func, &str_eq_func);
     hashmap_set_free_func(map, &stu_free);
     student **stus = calloc(cnt, sizeof(student *));
@@ -329,7 +328,7 @@ int main() {
 
     test_contains(map);
 
-    test_get_or_defualt(map);
+    test_get_or_default(map);
 
     test_remove_if(map);
 
@@ -339,7 +338,7 @@ int main() {
 
     benchmark_put_expand();
 
-    benchmark_put_no_expand();
+    // benchmark_put_no_expand();
 
-    benchmark_get();
+    // benchmark_get();
 }
