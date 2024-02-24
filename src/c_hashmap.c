@@ -1,7 +1,6 @@
 #include "c_hashmap.h"
 #include "limits.h"
 #include <stdio.h>
-#include <errno.h>
 
 hashmap hashmap_new_f(int             init_cap,
                       float           expand_factor,
