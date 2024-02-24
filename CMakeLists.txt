@@ -5,6 +5,7 @@ set(CMAKE_BUILD_TYPE "Release")
 if(NEED_TEST)
     set(CMAKE_BUILD_TYPE "Debug")
     set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O3")
+    set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 endif(NEED_TEST)
 
 # include .c files
